@@ -1008,6 +1008,12 @@ func (c *CLab) Deploy(ctx context.Context, options *DeployOptions) ([]runtime.Ge
 	if err != nil {
 		return nil, err
 	}
+	// create empty hosts.yaml file that will get populated later
+	hostsYamlFPath := c.TopoPaths.NornirInventoryHostsFileAbsPath()
+	_, err = os.Create(hostsYamlFPath)
+	if err != nil {
+		return nil, err
+	}
 
 	// in an similar fashion, create an empty topology data file
 	topoDataFPath := c.TopoPaths.TopoExportFile()

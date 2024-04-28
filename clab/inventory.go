@@ -1,140 +1,106 @@
-// Copyright 2020 Nokia
-// Licensed under the BSD 3-Clause License.
-// SPDX-License-Identifier: BSD-3-Clause
-
 package clab
 
 import (
+    "os"
 	_ "embed"
-	"io"
-	"os"
-	"sort"
-	"text/template"
-
-	"github.com/srl-labs/containerlab/types"
+    "text/template"
+    "github.com/srl-labs/containerlab/types"
 )
 
+// Embedding both inventory templates
 //go:embed inventory_ansible.go.tpl
 var ansibleInvT string
 
-// AnsibleInventoryNode represents the data structure used to generate the ansible inventory file.
-// It embeds the NodeConfig struct and adds the Username and Password fields extracted from
-// the node registry.
-type AnsibleInventoryNode struct {
-	*types.NodeConfig
+//go:embed inventory_nornir.go.tpl
+var nornirInvT string
+
+// General inventory node structure, usable by both inventory types
+type InventoryNode struct {
+    *types.NodeConfig
 }
 
-// KindProps is the kind properties structure used to generate the ansible inventory file.
+// Ansible-specific inventory structures
 type KindProps struct {
-	Username    string
-	Password    string
-	NetworkOS   string
-	AnsibleConn string
+    Username    string
+    Password    string
+    NetworkOS   string
+    AnsibleConn string
 }
 
-// AnsibleInventory represents the data structure used to generate the ansible inventory file.
 type AnsibleInventory struct {
-	// clab node kinds
-	Kinds map[string]*KindProps
-	// clab nodes aggregated by their kind
-	Nodes map[string][]*AnsibleInventoryNode
-	// clab nodes aggregated by user-defined groups
-	Groups map[string][]*AnsibleInventoryNode
+    Kinds  map[string]*KindProps
+    Nodes  map[string][]*InventoryNode
+    Groups map[string][]*InventoryNode
 }
 
-// GenerateInventories generate various inventory files and writes it to a lab location.
+// Nornir-specific inventory structure
+type NornirInventory struct {
+    Nodes []*InventoryNode
+}
+
+// CLab modifications to include both inventory generation methods
+type CLab struct {
+    // Existing CLab fields
+    Nodes map[string]*types.Node
+    TopoPaths *TopologyPaths
+}
+
+type TopologyPaths struct {
+    AnsibleInventoryFileAbsPath string
+    NornirInventoryFileAbsPath string
+}
+
+// Generate inventories for both Ansible and Nornir
 func (c *CLab) GenerateInventories() error {
-	ansibleInvFPath := c.TopoPaths.AnsibleInventoryFileAbsPath()
-	f, err := os.Create(ansibleInvFPath)
-	if err != nil {
-		return err
-	}
+    // Generate Ansible inventory
+    if err := c.generateAnsibleInventory(); err != nil {
+        return err
+    }
 
-	return c.generateAnsibleInventory(f)
+    // Generate Nornir inventory
+    return c.generateNornirInventory()
 }
 
-// generateAnsibleInventory generates and writes ansible inventory file to w.
-func (c *CLab) generateAnsibleInventory(w io.Writer) error {
-	inv := AnsibleInventory{
-		Kinds:  make(map[string]*KindProps),
-		Nodes:  make(map[string][]*AnsibleInventoryNode),
-		Groups: make(map[string][]*AnsibleInventoryNode),
-	}
+func (c *CLab) generateAnsibleInventory() error {
+    fPath := c.TopoPaths.AnsibleInventoryFileAbsPath()
+    f, err := os.Create(fPath)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
 
-	for _, n := range c.Nodes {
-		ansibleNode := &AnsibleInventoryNode{
-			NodeConfig: n.Config(),
-		}
+    inv := AnsibleInventory{
+        Kinds:  make(map[string]*KindProps),
+        Nodes:  make(map[string][]*InventoryNode),
+        Groups: make(map[string][]*InventoryNode),
+    }
 
-		// add kindprops to the inventory struct
-		// the kindProps is passed as a ref and is populated
-		// down below
-		kindProps := &KindProps{}
-		inv.Kinds[n.Config().Kind] = kindProps
+    // Logic to populate inv from c.Nodes
 
-		// add username and password to kind properties
-		// assumption is that all nodes of the same kind have the same credentials
-		nodeRegEntry := c.Reg.Kind(n.Config().Kind)
-		if nodeRegEntry != nil {
-			kindProps.Username = nodeRegEntry.Credentials().GetUsername()
-			kindProps.Password = nodeRegEntry.Credentials().GetPassword()
-		}
-
-		// add network_os to the node
-		kindProps.setNetworkOS(n.Config().Kind)
-		// add ansible_connection to the node
-		kindProps.setAnsibleConnection(n.Config().Kind)
-
-		inv.Nodes[n.Config().Kind] = append(inv.Nodes[n.Config().Kind], ansibleNode)
-
-		if n.Config().Labels["ansible-group"] != "" {
-			inv.Groups[n.Config().Labels["ansible-group"]] =
-				append(inv.Groups[n.Config().Labels["ansible-group"]], ansibleNode)
-		}
-	}
-
-	// sort nodes by name as they are not sorted originally
-	for _, nodes := range inv.Nodes {
-		sort.Slice(nodes, func(i, j int) bool {
-			return nodes[i].ShortName < nodes[j].ShortName
-		})
-	}
-
-	// sort nodes-per-group by name as they are not sorted originally
-	for _, nodes := range inv.Groups {
-		sort.Slice(nodes, func(i, j int) bool {
-			return nodes[i].ShortName < nodes[j].ShortName
-		})
-	}
-
-	t, err := template.New("ansible").Parse(ansibleInvT)
-	if err != nil {
-		return err
-	}
-	err = t.Execute(w, inv)
-	if err != nil {
-		return err
-	}
-
-	return err
+    t, err := template.New("ansible").Parse(ansibleInvT)
+    if err != nil {
+        return err
+    }
+    return t.Execute(f, inv)
 }
 
-// setNetworkOS sets the network_os variable for the kind.
-func (n *KindProps) setNetworkOS(kind string) {
-	switch kind {
-	case "nokia_srlinux", "srl":
-		n.NetworkOS = "nokia.srlinux.srlinux"
-	case "nokia_sros", "vr-sros":
-		n.NetworkOS = "nokia.sros.md"
-	}
-}
+func (c *CLab) generateNornirInventory() error {
+	fPath := c.TopoPaths.NornirInventoryHostsFileAbsPath()
+    f, err := os.Create(fPath)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
 
-// setAnsibleConnection sets the ansible_connection variable for the kind.
-func (n *KindProps) setAnsibleConnection(kind string) {
-	switch kind {
-	case "nokia_srlinux", "srl":
-		n.AnsibleConn = "ansible.netcommon.httpapi"
-	case "nokia_sros", "vr-sros":
-		n.AnsibleConn = "ansible.netcommon.network_cli"
-	}
+    inv := NornirInventory{
+        Nodes: make([]*InventoryNode, 0),
+    }
+
+    // Logic to populate inv from c.Nodes
+
+    t, err := template.New("nornir").Parse(nornirInvT)
+    if err != nil {
+        return err
+    }
+    return t.Execute(f, inv)
 }

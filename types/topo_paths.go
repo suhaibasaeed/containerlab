@@ -12,6 +12,7 @@ import (
 
 const (
 	ansibleInventoryFileName  = "ansible-inventory.yml"
+	nornirInventoryHostsFileName = "hosts.yml"
 	topologyExportDatFileName = "topology-data.json"
 	authzKeysFileName         = "authorized_keys"
 	tlsDir                    = ".tls"
@@ -167,6 +168,10 @@ func (t *TopoPaths) TopoExportFile() string {
 // AnsibleInventoryFileAbsPath returns the absolute path to the ansible-inventory file.
 func (t *TopoPaths) AnsibleInventoryFileAbsPath() string {
 	return path.Join(t.labDir, ansibleInventoryFileName)
+}
+// NornirInventoryHostsFileAbsPath returns the absolute path to the nornir hosts file.
+func (t *TopoPaths) NornirInventoryHostsFileAbsPath() string {
+	return path.Join(t.labDir, nornirInventoryHostsFileName)
 }
 
 // TopologyFilenameAbsPath returns the absolute path to the topology file.

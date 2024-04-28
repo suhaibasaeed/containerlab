@@ -1,0 +1,8 @@
+clab-srl02-srl1:
+  hostname: 172.20.20.3
+  groups:
+    - nokia_srlinux
+clab-srl02-srl2:
+  hostname: 172.20.20.2
+  groups:
+    - nokia_srlinux
